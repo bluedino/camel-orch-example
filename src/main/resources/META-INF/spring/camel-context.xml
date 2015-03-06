@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:aop="http://www.springframework.org/schema/aop" xmlns:camel="http://camel.apache.org/schema/spring"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+		http://www.springframework.org/schema/tx  http://www.springframework.org/schema/tx/spring-tx-3.1.xsd
+		http://www.springframework.org/schema/context  http://www.springframework.org/schema/context/spring-context-3.1.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.1.xsd
+		http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+	<!-- activate annotations -->
+	<context:annotation-config />
+
+	<!-- declaring Camel processors -->
+	<bean id="filterA" class="basaki.ProcessorA" />
+	<bean id="filterB" class="basaki.ProcessorB" />
+	<bean id="filterC" class="basaki.ProcessorC" />
+
+	<!-- declaring custom data formatters -->
+	<bean id="formatter" class="basaki.StringToPayloadDataFormat" />
+	<bean id="filenameFormatter" class="basaki.FileNameDataFormat" />
+
+	<!-- declaring bean router to be used by interceptor to route message -->
+	<bean id="msgProducer" class="basaki.MessageProducer" />
+
+	<!-- declaring interceptor strategy -->
+	<bean id="myInterceptor" class="basaki.ProcessInterceptor" />
+
+	<!-- declaring dead letter queue error handler -->
+	<camel:errorHandler id="dlErrorHandler" type="DeadLetterChannel"
+	deadLetterUri="file:/data/Examples/camel/camel-orch-example/dead"
+	useOriginalMessage="true">
+		<!-- declaring redelivery policy -->
+		<camel:redeliveryPolicy maximumRedeliveries="1"
+			redeliveryDelay="1000" logHandled="true" asyncDelayedRedelivery="true" />
+	</camel:errorHandler>
+
+	<camel:camelContext xmlns="http://camel.apache.org/schema/spring">
+		<!-- declaring endpoints -->
+		<endpoint id="in.queue"
+			uri="file:/data/Examples/camel/camel-orch-example/in?delete=true&amp;consumer.delay=5000" />
+		<endpoint id="out.queue" uri="file:/data/Examples/camel/camel-orch-example/out" />
+		<endpoint id="log.queue" uri="file:/data/Examples/camel/camel-orch-example/log" />
+
+		<!-- route for bean router, -->
+		<!-- used for sending messages to orchestration queue -->
+		<camel:route>
+			<camel:from uri="direct:start" />
+			<camel:marshal>
+				<custom ref="filenameFormatter" />
+			</camel:marshal>
+			<camel:to uri="log.queue" />
+		</camel:route>
+
+		<!-- declaring a route with an error handler -->
+		<camel:route id="example-service" errorHandlerRef="dlErrorHandler">
+			<!-- input endpoint -->
+			<camel:from uri="in.queue" />
+			<!-- unmarshaling string to Payload -->
+			<camel:unmarshal>
+				<custom ref="formatter" />
+			</camel:unmarshal>
+			<camel:process ref="filterA" id="id-filterA" />
+			<camel:process ref="filterB" id="id-filterB" />
+			<camel:process ref="filterC" id="id-filterA" />
+			<!-- marshaling Payload to string and giving the -->
+			<!-- output file a custon name -->
+			<camel:marshal>
+				<custom ref="formatter" />
+			</camel:marshal>
+			<!-- output endpoint -->
+			<camel:to uri="out.queue" />
+		</camel:route>
+	</camel:camelContext>
+
+</beans>
